@@ -1,0 +1,1460 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sri Lakshmi Balaji School | Smart Facial Attendance</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Inter & Plus Jakarta Sans -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
+  <!-- Font Awesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+  <!-- Face-API.js (@vladmandic/face-api via jsDelivr for reliable modern browser & model support) -->
+  <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/dist/face-api.min.js"></script>
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            display: ['Plus Jakarta Sans', 'sans-serif'],
+          },
+          colors: {
+            slate: {
+              850: '#151e32',
+              900: '#0f172a',
+              950: '#090d16',
+            }
+          }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    body {
+      background-color: #090d16;
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(79, 70, 229, 0.16) 0px, transparent 50%),
+        radial-gradient(at 100% 0%, rgba(16, 185, 129, 0.12) 0px, transparent 50%),
+        radial-gradient(at 50% 100%, rgba(99, 102, 241, 0.08) 0px, transparent 50%);
+      background-attachment: fixed;
+      color: #f8fafc;
+    }
+
+    .glass-panel {
+      background: rgba(15, 23, 42, 0.72);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.4);
+    }
+
+    .glass-card {
+      background: rgba(30, 41, 59, 0.55);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      transition: all 0.2s ease;
+    }
+
+    .glass-card:hover {
+      border-color: rgba(99, 102, 241, 0.35);
+      background: rgba(30, 41, 59, 0.75);
+    }
+
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.5);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(99, 102, 241, 0.4);
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(99, 102, 241, 0.7);
+    }
+
+    /* Scanning laser animation */
+    @keyframes scanLine {
+      0% { top: 8%; opacity: 0.2; }
+      50% { top: 88%; opacity: 0.95; }
+      100% { top: 8%; opacity: 0.2; }
+    }
+    .scanner-beam {
+      position: absolute;
+      left: 5%;
+      width: 90%;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, #10b981, #6366f1, transparent);
+      box-shadow: 0 0 12px #10b981;
+      animation: scanLine 2.8s ease-in-out infinite;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col antialiased selection:bg-indigo-500 selection:text-white">
+
+  <!-- Toast Notification Container -->
+  <div id="toastContainer" class="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none px-4 sm:px-0"></div>
+
+  <!-- Header -->
+  <header class="sticky top-0 z-40 glass-panel border-b border-white/10">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex flex-col sm:flex-row items-center justify-between gap-3">
+      <!-- School Brand -->
+      <div class="flex items-center gap-3.5 w-full sm:w-auto justify-between sm:justify-start">
+        <div class="flex items-center gap-3">
+          <div class="w-11 h-11 rounded-2xl bg-gradient-to-br from-indigo-500 via-purple-500 to-emerald-500 p-[2px] shadow-lg shadow-indigo-500/20 shrink-0">
+            <div class="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center">
+              <i class="fa-solid fa-graduation-cap text-transparent bg-clip-text bg-gradient-to-tr from-indigo-400 to-emerald-400 text-xl"></i>
+            </div>
+          </div>
+          <div>
+            <h1 class="font-display font-bold text-base sm:text-lg tracking-tight text-white leading-tight">
+              Sri Lakshmi Balaji School
+            </h1>
+            <p class="text-xs text-slate-400 flex items-center gap-1.5">
+              <span class="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              AI Facial Attendance Portal
+            </p>
+          </div>
+        </div>
+
+        <!-- AI Model Status Badge (Mobile compact) -->
+        <div id="modelStatusBadgeMobile" class="sm:hidden flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-amber-500/15 text-amber-300 border border-amber-500/30">
+          <i class="fa-solid fa-circle-notch fa-spin"></i>
+          <span>Loading AI</span>
+        </div>
+      </div>
+
+      <!-- Right Status & Quick Stats -->
+      <div class="hidden sm:flex items-center gap-4">
+        <div id="modelStatusBadge" class="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-amber-500/15 text-amber-300 border border-amber-500/30 transition-all">
+          <i class="fa-solid fa-circle-notch fa-spin"></i>
+          <span>Loading Face AI Models...</span>
+        </div>
+        <div class="text-right border-l border-white/10 pl-4">
+          <p id="headerDate" class="text-xs font-semibold text-slate-200"></p>
+          <p id="headerStudentCount" class="text-[11px] text-emerald-400 font-medium">0 Students Enrolled</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-3">
+      <nav class="grid grid-cols-3 gap-2 p-1.5 rounded-2xl bg-slate-950/80 border border-white/5" role="tablist">
+        <button onclick="switchTab('attendance')" id="tab-attendance" class="tab-btn flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-semibold transition-all bg-gradient-to-r from-indigo-600 to-emerald-600 text-white shadow-lg shadow-indigo-500/20">
+          <i class="fa-solid fa-camera"></i>
+          <span>Live Attendance</span>
+        </button>
+        <button onclick="switchTab('enroll')" id="tab-enroll" class="tab-btn flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-semibold text-slate-400 hover:text-white hover:bg-white/5 transition-all">
+          <i class="fa-solid fa-user-plus"></i>
+          <span>Enroll Student</span>
+        </button>
+        <button onclick="switchTab('reports')" id="tab-reports" class="tab-btn flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-semibold text-slate-400 hover:text-white hover:bg-white/5 transition-all">
+          <i class="fa-solid fa-file-excel"></i>
+          <span>Reports & Sync</span>
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Main Content Container -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+
+    <!-- ===================================================================== -->
+    <!-- TAB 1: LIVE ATTENDANCE SCANNER                                        -->
+    <!-- ===================================================================== -->
+    <section id="panel-attendance" class="space-y-6">
+      <!-- Top Control Bar -->
+      <div class="glass-panel rounded-2xl p-4 sm:p-5 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+        <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1">
+          <div class="flex-1 max-w-xs">
+            <label for="attendanceClassFilter" class="block text-[11px] uppercase tracking-wider font-semibold text-slate-400 mb-1">Select Class / Section</label>
+            <select id="attendanceClassFilter" onchange="renderAttendanceChecklist()" class="w-full bg-slate-900/90 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="ALL">All Classes (School-Wide)</option>
+              <option value="Class 10 - A">Class 10 - Section A</option>
+              <option value="Class 10 - B">Class 10 - Section B</option>
+              <option value="Class 9 - A">Class 9 - Section A</option>
+              <option value="Class 8 - A">Class 8 - Section A</option>
+              <option value="Class 7 - A">Class 7 - Section A</option>
+              <option value="Class 6 - A">Class 6 - Section A</option>
+            </select>
+          </div>
+
+          <div class="flex-1 max-w-xs">
+            <label for="attendanceDatePicker" class="block text-[11px] uppercase tracking-wider font-semibold text-slate-400 mb-1">Attendance Date</label>
+            <input type="date" id="attendanceDatePicker" onchange="renderAttendanceChecklist()" class="w-full bg-slate-900/90 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          </div>
+        </div>
+
+        <!-- Camera Action Buttons -->
+        <div class="flex flex-wrap items-center gap-2.5 pt-2 md:pt-4">
+          <button id="btnStartAttendanceCam" onclick="startAttendanceCamera()" class="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-lg shadow-emerald-500/20 transition-all active:scale-95">
+            <i class="fa-solid fa-video"></i>
+            <span>Start Scanner</span>
+          </button>
+          <button id="btnStopAttendanceCam" onclick="stopAttendanceCamera()" class="hidden flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30 transition-all active:scale-95">
+            <i class="fa-solid fa-stop"></i>
+            <span>Stop Camera</span>
+          </button>
+          <button onclick="simulateScanDemo()" title="Simulate a face scan if camera is unavailable" class="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/30 transition-all active:scale-95">
+            <i class="fa-solid fa-wand-magic-sparkles"></i>
+            <span>Demo Scan</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Main Grid: Live Scanner Feed (Left) + Student Checklist (Right) -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <!-- Live Camera Viewport -->
+        <div class="lg:col-span-7 flex flex-col gap-4">
+          <div class="glass-panel rounded-2xl p-4 flex flex-col">
+            <div class="flex items-center justify-between mb-3">
+              <div class="flex items-center gap-2">
+                <span id="liveIndicatorDot" class="w-2.5 h-2.5 rounded-full bg-slate-600"></span>
+                <h2 class="font-display font-bold text-base text-white">Classroom Face Scanner</h2>
+              </div>
+              <span id="scannerStatusText" class="text-xs text-slate-400">Camera Standby</span>
+            </div>
+
+            <!-- Responsive Video + Canvas Overlay Container -->
+            <div id="attendanceVideoWrapper" class="relative w-full aspect-video bg-slate-950 rounded-xl overflow-hidden border border-white/10 flex items-center justify-center">
+              <!-- Placeholder state when camera is off -->
+              <div id="cameraPlaceholder" class="text-center p-6 max-w-sm">
+                <div class="w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center mx-auto mb-3 text-indigo-400 text-2xl">
+                  <i class="fa-solid fa-face-viewfinder"></i>
+                </div>
+                <h3 class="font-semibold text-slate-200 text-sm mb-1">Ready for Face Recognition</h3>
+                <p class="text-xs text-slate-400 leading-relaxed mb-4">
+                  Click <strong class="text-emerald-400">Start Scanner</strong> to open your webcam/phone camera, or use <strong class="text-indigo-400">Demo Scan</strong> in sandboxed environments.
+                </p>
+              </div>
+
+              <video id="attendanceVideo" class="hidden w-full h-full object-cover" autoplay muted playsinline></video>
+              <canvas id="attendanceOverlay" class="hidden absolute inset-0 w-full h-full pointer-events-none"></canvas>
+              <div id="scannerBeam" class="hidden scanner-beam"></div>
+
+              <!-- Live Detection Toast Banner inside viewport -->
+              <div id="lastMatchedBanner" class="hidden absolute bottom-3 left-3 right-3 glass-panel rounded-xl px-4 py-2.5 border border-emerald-500/40 flex items-center justify-between">
+                <div class="flex items-center gap-2.5">
+                  <div class="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                    <i class="fa-solid fa-check"></i>
+                  </div>
+                  <div>
+                    <p id="lastMatchedName" class="text-sm font-bold text-white">Student Name</p>
+                    <p id="lastMatchedMeta" class="text-[11px] text-emerald-300">Marked Present • 09:00 AM</p>
+                  </div>
+                </div>
+                <span class="text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300">VERIFIED</span>
+              </div>
+            </div>
+
+            <!-- Live Stats Summary Bar -->
+            <div class="grid grid-cols-3 gap-3 mt-4">
+              <div class="glass-card rounded-xl p-3 text-center">
+                <p class="text-[11px] text-slate-400 uppercase font-semibold">Total Students</p>
+                <p id="statTotalCount" class="text-xl font-display font-bold text-white mt-0.5">0</p>
+              </div>
+              <div class="glass-card rounded-xl p-3 text-center border-emerald-500/20">
+                <p class="text-[11px] text-emerald-400 uppercase font-semibold">Present</p>
+                <p id="statPresentCount" class="text-xl font-display font-bold text-emerald-400 mt-0.5">0</p>
+              </div>
+              <div class="glass-card rounded-xl p-3 text-center border-rose-500/20">
+                <p class="text-[11px] text-rose-400 uppercase font-semibold">Absent</p>
+                <p id="statAbsentCount" class="text-xl font-display font-bold text-rose-400 mt-0.5">0</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Student Roster & Manual Override Checklist -->
+        <div class="lg:col-span-5">
+          <div class="glass-panel rounded-2xl p-4 sm:p-5 flex flex-col h-full max-h-[620px]">
+            <div class="flex items-center justify-between gap-2 pb-3 border-b border-white/10">
+              <div>
+                <h2 class="font-display font-bold text-base text-white">Class Register Checklist</h2>
+                <p class="text-xs text-slate-400">Auto-updates on face match • Tap to override</p>
+              </div>
+              <button onclick="markAllPresentForFiltered()" class="text-xs font-medium px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 transition-all">
+                Mark All Present
+              </button>
+            </div>
+
+            <!-- Search within class -->
+            <div class="my-3 relative">
+              <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+              <input type="text" id="checklistSearch" oninput="renderAttendanceChecklist()" placeholder="Search student name or roll no..." class="w-full bg-slate-900/80 border border-white/10 rounded-xl pl-9 pr-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            </div>
+
+            <!-- Scrollable Student List -->
+            <div id="attendanceChecklistContainer" class="flex-1 overflow-y-auto space-y-2.5 pr-1">
+              <!-- Populated dynamically via JS -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================================================================== -->
+    <!-- TAB 2: ENROLL STUDENT                                                 -->
+    <!-- ===================================================================== -->
+    <section id="panel-enroll" class="hidden space-y-6">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <!-- Left: Enrollment Form & Face Capture -->
+        <div class="lg:col-span-7 glass-panel rounded-2xl p-5 sm:p-6">
+          <div class="flex items-center justify-between mb-5">
+            <div>
+              <h2 class="font-display font-bold text-lg text-white">Enroll New Student</h2>
+              <p class="text-xs text-slate-400">Capture a clear front-facing photo to generate their 128-point biometric signature.</p>
+            </div>
+            <span class="px-3 py-1 rounded-full text-xs font-semibold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
+              128-D Face Embedding
+            </span>
+          </div>
+
+          <form id="enrollForm" onsubmit="handleEnrollSubmit(event)" class="space-y-4">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1.5">Student Full Name *</label>
+                <input type="text" id="enrollName" required placeholder="e.g., Aarav Sharma" class="w-full bg-slate-900/90 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1.5">Roll Number / Admission ID *</label>
+                <input type="text" id="enrollRoll" required placeholder="e.g., SLBS-10A-01" class="w-full bg-slate-900/90 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1.5">Class & Section *</label>
+              <select id="enrollClass" required class="w-full bg-slate-900/90 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <option value="Class 10 - A">Class 10 - Section A</option>
+                <option value="Class 10 - B">Class 10 - Section B</option>
+                <option value="Class 9 - A">Class 9 - Section A</option>
+                <option value="Class 8 - A">Class 8 - Section A</option>
+                <option value="Class 7 - A">Class 7 - Section A</option>
+                <option value="Class 6 - A">Class 6 - Section A</option>
+              </select>
+            </div>
+
+            <!-- Capture Mode Switcher: Live Webcam vs Photo Upload -->
+            <div class="pt-2">
+              <label class="block text-xs font-semibold text-slate-300 mb-2">Student Face Capture Method</label>
+              <div class="grid grid-cols-2 gap-2 p-1 rounded-xl bg-slate-950/90 border border-white/10 mb-3">
+                <button type="button" id="modeBtnWebcam" onclick="setEnrollCaptureMode('webcam')" class="py-2 px-3 rounded-lg text-xs font-semibold bg-indigo-600 text-white transition-all">
+                  <i class="fa-solid fa-camera mr-1.5"></i>Live Webcam
+                </button>
+                <button type="button" id="modeBtnUpload" onclick="setEnrollCaptureMode('upload')" class="py-2 px-3 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition-all">
+                  <i class="fa-solid fa-upload mr-1.5"></i>Upload Photo
+                </button>
+              </div>
+
+              <!-- Webcam Capture Box -->
+              <div id="enrollWebcamBox" class="space-y-3">
+                <div class="relative w-full aspect-video bg-slate-950 rounded-xl overflow-hidden border border-white/10 flex items-center justify-center">
+                  <video id="enrollVideo" class="w-full h-full object-cover hidden" autoplay muted playsinline></video>
+                  <img id="enrollCapturedPreview" class="w-full h-full object-cover hidden" alt="Captured Student Face" />
+                  <div id="enrollCamPrompt" class="text-center p-4">
+                    <i class="fa-solid fa-camera-retro text-3xl text-slate-500 mb-2"></i>
+                    <p class="text-xs text-slate-400 mb-3">Turn on camera to capture student's face</p>
+                    <button type="button" onclick="startEnrollCamera()" class="px-4 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition-all">
+                      Enable Camera
+                    </button>
+                  </div>
+                </div>
+                <div class="flex items-center gap-2">
+                  <button type="button" id="btnSnapEnroll" onclick="captureEnrollSnapshot()" class="hidden flex-1 py-2.5 px-4 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition-all">
+                    <i class="fa-solid fa-camera mr-1.5"></i>Snap Photo & Extract Face
+                  </button>
+                  <button type="button" id="btnRetakeEnroll" onclick="retakeEnrollSnapshot()" class="hidden py-2.5 px-4 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-white/10 transition-all">
+                    <i class="fa-solid fa-rotate-left mr-1.5"></i>Retake
+                  </button>
+                </div>
+              </div>
+
+              <!-- File Upload Box -->
+              <div id="enrollUploadBox" class="hidden space-y-3">
+                <label class="flex flex-col items-center justify-center w-full h-44 border-2 border-dashed border-white/15 hover:border-indigo-500/50 rounded-xl cursor-pointer bg-slate-950/60 transition-all">
+                  <div id="uploadPlaceholder" class="flex flex-col items-center justify-center pt-5 pb-6 text-center px-4">
+                    <i class="fa-solid fa-cloud-arrow-up text-2xl text-indigo-400 mb-2"></i>
+                    <p class="text-xs text-slate-300 font-medium">Click to upload student passport photo</p>
+                    <p class="text-[11px] text-slate-500 mt-1">PNG, JPG or WEBP (Clear single face)</p>
+                  </div>
+                  <img id="enrollUploadPreview" class="hidden h-full w-full object-contain rounded-xl p-1" alt="Uploaded Preview" />
+                  <input type="file" id="enrollFileInput" accept="image/*" onchange="handleEnrollFileUpload(event)" class="hidden" />
+                </label>
+              </div>
+            </div>
+
+            <!-- Face Extraction Status Banner -->
+            <div id="descriptorStatusBox" class="p-3 rounded-xl bg-slate-900/90 border border-white/10 flex items-center justify-between text-xs">
+              <span class="text-slate-400"><i class="fa-solid fa-microchip mr-1.5 text-indigo-400"></i>Face Biometric Status:</span>
+              <span id="descriptorStatusLabel" class="font-semibold text-amber-400">Awaiting Face Capture</span>
+            </div>
+
+            <button type="submit" id="btnSaveStudent" class="w-full py-3 px-5 rounded-xl text-sm font-bold bg-gradient-to-r from-indigo-600 to-emerald-600 hover:from-indigo-500 hover:to-emerald-500 text-white shadow-lg shadow-indigo-500/25 transition-all active:scale-[0.99]">
+              <i class="fa-solid fa-user-check mr-2"></i>Register Student in Database
+            </button>
+          </form>
+        </div>
+
+        <!-- Right: Enrolled Students Directory -->
+        <div class="lg:col-span-5 glass-panel rounded-2xl p-5 sm:p-6 flex flex-col max-h-[720px]">
+          <div class="flex items-center justify-between pb-3 border-b border-white/10">
+            <div>
+              <h2 class="font-display font-bold text-lg text-white">Enrolled Students</h2>
+              <p class="text-xs text-slate-400">Stored locally in browser database</p>
+            </div>
+            <span id="directoryTotalBadge" class="px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+              0 Total
+            </span>
+          </div>
+
+          <div id="enrolledStudentsList" class="flex-1 overflow-y-auto space-y-3 mt-4 pr-1">
+            <!-- Populated dynamically via JS -->
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================================================================== -->
+    <!-- TAB 3: ATTENDANCE REPORTS & GOOGLE SHEETS SYNC                        -->
+    <!-- ===================================================================== -->
+    <section id="panel-reports" class="hidden space-y-6">
+      <!-- Google Sheets Integration Card -->
+      <div class="glass-panel rounded-2xl p-5 sm:p-6 border border-indigo-500/20">
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div class="space-y-1">
+            <div class="flex items-center gap-2">
+              <span class="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                <i class="fa-solid fa-table"></i>
+              </span>
+              <h2 class="font-display font-bold text-lg text-white">Google Sheets Cloud Sync</h2>
+            </div>
+            <p class="text-xs text-slate-400 max-w-2xl">
+              Connect your Sri Lakshmi Balaji School Google Spreadsheet via Google Apps Script Web App URL to push daily attendance logs directly to the cloud.
+            </p>
+          </div>
+          <button onclick="toggleAppsScriptModal(true)" class="self-start lg:self-center inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/30 transition-all">
+            <i class="fa-solid fa-code"></i>
+            <span>View Apps Script Setup Code</span>
+          </button>
+        </div>
+
+        <div class="mt-4 flex flex-col sm:flex-row gap-3">
+          <input type="url" id="webhookUrlInput" onchange="saveWebhookUrl()" placeholder="https://script.google.com/macros/s/AKfycb.../exec" class="flex-1 bg-slate-950/90 border border-white/10 rounded-xl px-4 py-2.5 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+          <button id="btnSyncSheets" onclick="syncToGoogleSheets()" class="inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-lg shadow-emerald-500/20 transition-all active:scale-95 shrink-0">
+            <i class="fa-solid fa-cloud-arrow-up"></i>
+            <span>Sync to Google Sheets</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Daily Logs Table & Export -->
+      <div class="glass-panel rounded-2xl p-5 sm:p-6">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-white/10">
+          <div>
+            <h3 class="font-display font-bold text-lg text-white">Daily Attendance Register</h3>
+            <p class="text-xs text-slate-400">Filter records by date and class or export to Excel/CSV</p>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2.5">
+            <input type="date" id="reportDateFilter" onchange="renderReportsTable()" class="bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            <select id="reportClassFilter" onchange="renderReportsTable()" class="bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="ALL">All Classes</option>
+              <option value="Class 10 - A">Class 10 - Section A</option>
+              <option value="Class 10 - B">Class 10 - Section B</option>
+              <option value="Class 9 - A">Class 9 - Section A</option>
+              <option value="Class 8 - A">Class 8 - Section A</option>
+              <option value="Class 7 - A">Class 7 - Section A</option>
+              <option value="Class 6 - A">Class 6 - Section A</option>
+            </select>
+            <button onclick="exportAttendanceCSV()" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-white/10 hover:bg-white/15 text-white border border-white/10 transition-all">
+              <i class="fa-solid fa-download text-emerald-400"></i>
+              <span>Export CSV / Excel</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Responsive Table -->
+        <div class="overflow-x-auto mt-4">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="border-b border-white/10 text-[11px] uppercase tracking-wider text-slate-400">
+                <th class="py-3 px-4">Roll No</th>
+                <th class="py-3 px-4">Student Name</th>
+                <th class="py-3 px-4">Class / Sec</th>
+                <th class="py-3 px-4">Status</th>
+                <th class="py-3 px-4">Time Logged</th>
+                <th class="py-3 px-4">Verification</th>
+              </tr>
+            </thead>
+            <tbody id="reportsTableBody" class="divide-y divide-white/5 text-sm">
+              <!-- Populated dynamically via JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="border-t border-white/5 py-4 text-center text-xs text-slate-500">
+    Sri Lakshmi Balaji School • Smart Biometric Attendance System • Powered by Edge AI
+  </footer>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL: GOOGLE APPS SCRIPT SAMPLE CODE                                 -->
+  <!-- ===================================================================== -->
+  <div id="appsScriptModal" class="hidden fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="glass-panel rounded-2xl max-w-2xl w-full p-5 sm:p-6 border border-white/15 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-white/10 pb-3">
+        <h3 class="font-display font-bold text-base sm:text-lg text-white">
+          <i class="fa-brands fa-google text-emerald-400 mr-2"></i>Google Apps Script Backend Setup
+        </h3>
+        <button onclick="toggleAppsScriptModal(false)" class="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white flex items-center justify-center">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <ol class="text-xs text-slate-300 space-y-1.5 list-decimal list-inside">
+        <li>Open a new <strong>Google Sheet</strong> for Sri Lakshmi Balaji School Attendance.</li>
+        <li>Click <strong>Extensions &rarr; Apps Script</strong> and paste the code below.</li>
+        <li>Click <strong>Deploy &rarr; New deployment &rarr; Web app</strong> (Execute as: <em>Me</em>, Who has access: <em>Anyone</em>).</li>
+        <li>Copy the generated Web App URL and paste it into the input box on the Reports tab.</li>
+      </ol>
+
+      <div class="relative">
+        <pre id="appsScriptCodeBlock" class="bg-slate-950 border border-white/10 rounded-xl p-4 text-[11px] text-emerald-300 overflow-x-auto font-mono leading-relaxed">function doPost(e) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(["Date", "Time", "Roll No", "Student Name", "Class", "Status", "Method"]);
+  }
+  var payload = JSON.parse(e.postData.contents);
+  var records = payload.records || [];
+  records.forEach(function(r) {
+    sheet.appendRow([r.date, r.time, r.rollNo, r.name, r.className, r.status, r.method]);
+  });
+  return ContentService.createTextOutput(JSON.stringify({ status: "success", count: records.length }))
+    .setMimeType(ContentService.MimeType.JSON);
+}</pre>
+        <button onclick="copyAppsScriptCode()" class="absolute top-2.5 right-2.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow">
+          <i class="fa-regular fa-copy mr-1"></i>Copy Code
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hidden canvas for image processing -->
+  <canvas id="hiddenProcessCanvas" class="hidden"></canvas>
+
+  <script>
+    // =========================================================================
+    // 1. STATE & CONSTANTS
+    // =========================================================================
+    const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/model/';
+    const STORAGE_KEY_STUDENTS = 'slbs_enrolled_students_v1';
+    const STORAGE_KEY_ATTENDANCE = 'slbs_attendance_logs_v1';
+    const STORAGE_KEY_WEBHOOK = 'slbs_gsheets_webhook_v1';
+
+    let modelsLoaded = false;
+    let students = [];
+    let attendanceLogs = {}; // Format: { "YYYY-MM-DD": { "rollNo": { status: "Present", time: "09:15 AM", method: "AI Face Scan" } } }
+
+    let attendanceStream = null;
+    let attendanceScanInterval = null;
+    let enrollStream = null;
+    let currentExtractedDescriptor = null;
+    let currentCapturedDataUrl = null;
+    let recentlyMatchedCooldown = {}; // Prevent duplicate toast spam within 10 seconds
+
+    // =========================================================================
+    // 2. INITIALIZATION & DEMO SEED DATA
+    // =========================================================================
+    window.addEventListener('DOMContentLoaded', async () => {
+      const todayStr = getTodayDateString();
+      document.getElementById('attendanceDatePicker').value = todayStr;
+      document.getElementById('reportDateFilter').value = todayStr;
+      document.getElementById('headerDate').textContent = new Date().toLocaleDateString('en-IN', {
+        weekday: 'short', day: 'numeric', month: 'short', year: 'numeric'
+      });
+
+      // Load saved webhook
+      const savedWebhook = localStorage.getItem(STORAGE_KEY_WEBHOOK);
+      if (savedWebhook) {
+        document.getElementById('webhookUrlInput').value = savedWebhook;
+      }
+
+      // Load students & attendance logs from localStorage
+      loadLocalData();
+      updateAllUI();
+
+      // Load face-api.js models
+      await loadFaceApiModels();
+    });
+
+    function getTodayDateString() {
+      const now = new Date();
+      const offset = now.getTimezoneOffset() * 60000;
+      return new Date(now - offset).toISOString().split('T')[0];
+    }
+
+    function loadLocalData() {
+      const rawStudents = localStorage.getItem(STORAGE_KEY_STUDENTS);
+      if (rawStudents) {
+        students = JSON.parse(rawStudents);
+      } else {
+        // Pre-load sample enrolled students (Demo/Manual mode without biometric descriptors)
+        students = [
+          {
+            id: 'demo-1',
+            name: 'Karthikeya Reddy',
+            rollNo: 'SLBS-10A-01',
+            className: 'Class 10 - A',
+            photo: createAvatarSVG('KR', '#4f46e5'),
+            descriptor: null,
+            isDemo: true
+          },
+          {
+            id: 'demo-2',
+            name: 'Ananya Lakshmi',
+            rollNo: 'SLBS-10A-02',
+            className: 'Class 10 - A',
+            photo: createAvatarSVG('AL', '#10b981'),
+            descriptor: null,
+            isDemo: true
+          },
+          {
+            id: 'demo-3',
+            name: 'Rohan Varma',
+            rollNo: 'SLBS-9A-05',
+            className: 'Class 9 - A',
+            photo: createAvatarSVG('RV', '#8b5cf6'),
+            descriptor: null,
+            isDemo: true
+          }
+        ];
+        saveStudents();
+      }
+
+      const rawLogs = localStorage.getItem(STORAGE_KEY_ATTENDANCE);
+      if (rawLogs) {
+        attendanceLogs = JSON.parse(rawLogs);
+      }
+    }
+
+    function saveStudents() {
+      localStorage.setItem(STORAGE_KEY_STUDENTS, JSON.stringify(students));
+      document.getElementById('headerStudentCount').textContent = `${students.length} Students Enrolled`;
+    }
+
+    function saveAttendanceLogs() {
+      localStorage.setItem(STORAGE_KEY_ATTENDANCE, JSON.stringify(attendanceLogs));
+    }
+
+    function createAvatarSVG(initials, bgHex) {
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120">
+        <rect width="120" height="120" rx="24" fill="${bgHex}"/>
+        <text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="#ffffff" font-family="sans-serif" font-size="42" font-weight="bold">${initials}</text>
+      </svg>`;
+      return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+    }
+
+    // =========================================================================
+    // 3. LOAD FACE-API.JS MODELS
+    // =========================================================================
+    async function loadFaceApiModels() {
+      const desktopBadge = document.getElementById('modelStatusBadge');
+      const mobileBadge = document.getElementById('modelStatusBadgeMobile');
+
+      try {
+        await Promise.all([
+          faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+          faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+          faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
+        ]);
+        modelsLoaded = true;
+
+        desktopBadge.className = 'flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-emerald-500/15 text-emerald-300 border border-emerald-500/30';
+        desktopBadge.innerHTML = '<i class="fa-solid fa-circle-check"></i><span>Face AI Ready</span>';
+
+        mobileBadge.className = 'sm:hidden flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-emerald-500/15 text-emerald-300 border border-emerald-500/30';
+        mobileBadge.innerHTML = '<i class="fa-solid fa-circle-check"></i><span>AI Ready</span>';
+      } catch (err) {
+        console.error('Error loading face-api models:', err);
+        desktopBadge.className = 'flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-rose-500/15 text-rose-300 border border-rose-500/30';
+        desktopBadge.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i><span>Offline / Demo Mode</span>';
+
+        mobileBadge.className = 'sm:hidden flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-rose-500/15 text-rose-300 border border-rose-500/30';
+        mobileBadge.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i><span>Demo Mode</span>';
+        showToast('AI models could not reach CDN. Manual & Demo modes remain active.', 'warning');
+      }
+    }
+
+    // =========================================================================
+    // 4. NAVIGATION TABS
+    // =========================================================================
+    function switchTab(tabName) {
+      // Stop active camera streams when switching tabs to free hardware resources
+      if (tabName !== 'attendance') stopAttendanceCamera();
+      if (tabName !== 'enroll') stopEnrollCamera();
+
+      ['attendance', 'enroll', 'reports'].forEach(t => {
+        const panel = document.getElementById(`panel-${t}`);
+        const btn = document.getElementById(`tab-${t}`);
+        if (t === tabName) {
+          panel.classList.remove('hidden');
+          btn.className = 'tab-btn flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-semibold transition-all bg-gradient-to-r from-indigo-600 to-emerald-600 text-white shadow-lg shadow-indigo-500/20';
+        } else {
+          panel.classList.add('hidden');
+          btn.className = 'tab-btn flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-semibold text-slate-400 hover:text-white hover:bg-white/5 transition-all';
+        }
+      });
+
+      if (tabName === 'reports') renderReportsTable();
+      if (tabName === 'attendance') renderAttendanceChecklist();
+      if (tabName === 'enroll') renderEnrolledDirectory();
+    }
+
+    // =========================================================================
+    // 5. TAB 1: LIVE ATTENDANCE SCANNER & CHECKLIST
+    // =========================================================================
+    async function startAttendanceCamera() {
+      if (!modelsLoaded) {
+        showToast('Face AI models are still loading or offline. You can use Demo Scan or Manual toggles.', 'warning');
+      }
+
+      const video = document.getElementById('attendanceVideo');
+      const overlay = document.getElementById('attendanceOverlay');
+      const placeholder = document.getElementById('cameraPlaceholder');
+      const beam = document.getElementById('scannerBeam');
+
+      try {
+        attendanceStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+          audio: false
+        });
+        video.srcObject = attendanceStream;
+        await video.play();
+
+        placeholder.classList.add('hidden');
+        video.classList.remove('hidden');
+        overlay.classList.remove('hidden');
+        beam.classList.remove('hidden');
+
+        document.getElementById('btnStartAttendanceCam').classList.add('hidden');
+        document.getElementById('btnStopAttendanceCam').classList.remove('hidden');
+        document.getElementById('liveIndicatorDot').className = 'w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping';
+        document.getElementById('scannerStatusText').textContent = 'Scanning Live Feed...';
+        document.getElementById('scannerStatusText').className = 'text-xs text-emerald-400 font-medium';
+
+        startFaceRecognitionLoop();
+      } catch (err) {
+        console.warn('Camera permission blocked or unavailable:', err);
+        showToast('Camera blocked by browser/sandbox. Click "Demo Scan" to test automatic face matching!', 'warning');
+      }
+    }
+
+    function stopAttendanceCamera() {
+      if (attendanceScanInterval) {
+        clearInterval(attendanceScanInterval);
+        attendanceScanInterval = null;
+      }
+      if (attendanceStream) {
+        attendanceStream.getTracks().forEach(track => track.stop());
+        attendanceStream = null;
+      }
+
+      const video = document.getElementById('attendanceVideo');
+      const overlay = document.getElementById('attendanceOverlay');
+      const placeholder = document.getElementById('cameraPlaceholder');
+      const beam = document.getElementById('scannerBeam');
+
+      video.classList.add('hidden');
+      overlay.classList.add('hidden');
+      beam.classList.add('hidden');
+      placeholder.classList.remove('hidden');
+
+      document.getElementById('btnStartAttendanceCam').classList.remove('hidden');
+      document.getElementById('btnStopAttendanceCam').classList.add('hidden');
+      document.getElementById('liveIndicatorDot').className = 'w-2.5 h-2.5 rounded-full bg-slate-600';
+      document.getElementById('scannerStatusText').textContent = 'Camera Standby';
+      document.getElementById('scannerStatusText').className = 'text-xs text-slate-400';
+    }
+
+    function buildFaceMatcherForSelectedClass() {
+      const selectedClass = document.getElementById('attendanceClassFilter').value;
+      const eligibleStudents = students.filter(s =>
+        Array.isArray(s.descriptor) &&
+        s.descriptor.length === 128 &&
+        (selectedClass === 'ALL' || s.className === selectedClass)
+      );
+
+      if (eligibleStudents.length === 0) return null;
+
+      const labeledDescriptors = eligibleStudents.map(s => {
+        const float32 = new Float32Array(s.descriptor);
+        return new faceapi.LabeledFaceDescriptors(s.rollNo, [float32]);
+      });
+
+      // 0.52 distance threshold balances strictness and real-world lighting variations
+      return new faceapi.FaceMatcher(labeledDescriptors, 0.52);
+    }
+
+    function startFaceRecognitionLoop() {
+      const video = document.getElementById('attendanceVideo');
+      const canvas = document.getElementById('attendanceOverlay');
+
+      attendanceScanInterval = setInterval(async () => {
+        if (!attendanceStream || video.paused || video.ended || !modelsLoaded) return;
+
+        const displaySize = { width: video.clientWidth, height: video.clientHeight };
+        if (displaySize.width === 0 || displaySize.height === 0) return;
+
+        faceapi.matchDimensions(canvas, displaySize);
+
+        const detections = await faceapi
+          .detectAllFaces(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 }))
+          .withFaceLandmarks()
+          .withFaceDescriptors();
+
+        const resizedDetections = faceapi.resizeResults(detections, displaySize);
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        const faceMatcher = buildFaceMatcherForSelectedClass();
+
+        resizedDetections.forEach(det => {
+          const box = det.detection.box;
+          let label = 'Unknown Student';
+          let boxColor = '#f59e0b'; // Amber for unrecognized
+
+          if (faceMatcher) {
+            const bestMatch = faceMatcher.findBestMatch(det.descriptor);
+            if (bestMatch.label !== 'unknown') {
+              const matchedStudent = students.find(s => s.rollNo === bestMatch.label);
+              if (matchedStudent) {
+                label = `${matchedStudent.name} (${matchedStudent.rollNo})`;
+                boxColor = '#10b981'; // Emerald for recognized
+                markStudentPresent(matchedStudent.rollNo, 'AI Face Scan');
+              }
+            }
+          }
+
+          // Draw sleek bounding box & label
+          ctx.strokeStyle = boxColor;
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.roundRect(box.x, box.y, box.width, box.height, 8);
+          ctx.stroke();
+
+          ctx.fillStyle = boxColor;
+          const textWidth = ctx.measureText(label).width;
+          ctx.fillRect(box.x, Math.max(0, box.y - 24), textWidth + 16, 22);
+
+          ctx.fillStyle = '#090d16';
+          ctx.font = 'bold 12px Inter, sans-serif';
+          ctx.fillText(label, box.x + 8, Math.max(15, box.y - 9));
+        });
+      }, 450);
+    }
+
+    function simulateScanDemo() {
+      const selectedClass = document.getElementById('attendanceClassFilter').value;
+      const dateStr = document.getElementById('attendanceDatePicker').value;
+      const filtered = students.filter(s => selectedClass === 'ALL' || s.className === selectedClass);
+
+      if (filtered.length === 0) {
+        showToast('No students enrolled in this class yet.', 'warning');
+        return;
+      }
+
+      const dayLogs = attendanceLogs[dateStr] || {};
+      // Pick first unmarked student, or fallback to first student
+      const target = filtered.find(s => !dayLogs[s.rollNo] || dayLogs[s.rollNo].status !== 'Present') || filtered[0];
+
+      markStudentPresent(target.rollNo, 'Demo AI Scan');
+      showToast(`Simulated Face Match: ${target.name} marked Present!`, 'success');
+    }
+
+    function markStudentPresent(rollNo, method = 'AI Face Scan') {
+      const dateStr = document.getElementById('attendanceDatePicker').value;
+      if (!attendanceLogs[dateStr]) attendanceLogs[dateStr] = {};
+
+      const student = students.find(s => s.rollNo === rollNo);
+      if (!student) return;
+
+      // Duplicate prevention: if already Present today, don't overwrite original timestamp
+      const existing = attendanceLogs[dateStr][rollNo];
+      if (existing && existing.status === 'Present') {
+        return;
+      }
+
+      const timeStr = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+      attendanceLogs[dateStr][rollNo] = {
+        status: 'Present',
+        time: timeStr,
+        method: method
+      };
+
+      saveAttendanceLogs();
+      renderAttendanceChecklist();
+
+      // Update viewport banner & toast with cooldown
+      const banner = document.getElementById('lastMatchedBanner');
+      document.getElementById('lastMatchedName').textContent = `${student.name} (${student.rollNo})`;
+      document.getElementById('lastMatchedMeta').textContent = `Marked Present • ${timeStr} (${method})`;
+      banner.classList.remove('hidden');
+
+      if (!recentlyMatchedCooldown[rollNo]) {
+        recentlyMatchedCooldown[rollNo] = true;
+        showToast(`Verified: ${student.name} marked Present`, 'success');
+        setTimeout(() => { delete recentlyMatchedCooldown[rollNo]; }, 8000);
+      }
+    }
+
+    function toggleStudentAttendanceManual(rollNo) {
+      const dateStr = document.getElementById('attendanceDatePicker').value;
+      if (!attendanceLogs[dateStr]) attendanceLogs[dateStr] = {};
+
+      const current = attendanceLogs[dateStr][rollNo];
+      if (current && current.status === 'Present') {
+        attendanceLogs[dateStr][rollNo] = {
+          status: 'Absent',
+          time: '-',
+          method: 'Manual Override'
+        };
+      } else {
+        const timeStr = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+        attendanceLogs[dateStr][rollNo] = {
+          status: 'Present',
+          time: timeStr,
+          method: 'Manual Override'
+        };
+      }
+
+      saveAttendanceLogs();
+      renderAttendanceChecklist();
+    }
+
+    function markAllPresentForFiltered() {
+      const selectedClass = document.getElementById('attendanceClassFilter').value;
+      const dateStr = document.getElementById('attendanceDatePicker').value;
+      if (!attendanceLogs[dateStr]) attendanceLogs[dateStr] = {};
+
+      const timeStr = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+      const filtered = students.filter(s => selectedClass === 'ALL' || s.className === selectedClass);
+
+      filtered.forEach(s => {
+        if (!attendanceLogs[dateStr][s.rollNo] || attendanceLogs[dateStr][s.rollNo].status !== 'Present') {
+          attendanceLogs[dateStr][s.rollNo] = {
+            status: 'Present',
+            time: timeStr,
+            method: 'Bulk Manual'
+          };
+        }
+      });
+
+      saveAttendanceLogs();
+      renderAttendanceChecklist();
+      showToast(`Marked ${filtered.length} students Present for ${dateStr}`, 'success');
+    }
+
+    function renderAttendanceChecklist() {
+      const container = document.getElementById('attendanceChecklistContainer');
+      const selectedClass = document.getElementById('attendanceClassFilter').value;
+      const dateStr = document.getElementById('attendanceDatePicker').value;
+      const query = document.getElementById('checklistSearch').value.toLowerCase().trim();
+
+      const dayLogs = attendanceLogs[dateStr] || {};
+      const classStudents = students.filter(s => selectedClass === 'ALL' || s.className === selectedClass);
+
+      let presentCount = 0;
+      classStudents.forEach(s => {
+        if (dayLogs[s.rollNo] && dayLogs[s.rollNo].status === 'Present') presentCount++;
+      });
+
+      document.getElementById('statTotalCount').textContent = classStudents.length;
+      document.getElementById('statPresentCount').textContent = presentCount;
+      document.getElementById('statAbsentCount').textContent = classStudents.length - presentCount;
+
+      const searchedStudents = classStudents.filter(s =>
+        s.name.toLowerCase().includes(query) || s.rollNo.toLowerCase().includes(query)
+      );
+
+      if (searchedStudents.length === 0) {
+        container.innerHTML = `
+          <div class="text-center py-10 text-slate-500 text-xs">
+            <i class="fa-solid fa-users-slash text-2xl mb-2 block"></i>
+            No students found matching filter.
+          </div>`;
+        return;
+      }
+
+      container.innerHTML = searchedStudents.map(student => {
+        const record = dayLogs[student.rollNo];
+        const isPresent = record && record.status === 'Present';
+        const badgeType = student.descriptor
+          ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">Face ID</span>`
+          : `<span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-700/70 text-slate-300">Demo/Manual</span>`;
+
+        return `
+          <div onclick="toggleStudentAttendanceManual('${student.rollNo}')" class="glass-card rounded-xl p-3 flex items-center justify-between gap-3 cursor-pointer select-none ${isPresent ? 'border-emerald-500/40 bg-emerald-950/20' : ''}">
+            <div class="flex items-center gap-3 min-w-0">
+              <img src="${student.photo}" alt="${student.name}" class="w-10 h-10 rounded-xl object-cover border border-white/10 shrink-0" />
+              <div class="min-w-0">
+                <div class="flex items-center gap-1.5">
+                  <p class="text-sm font-semibold text-white truncate">${student.name}</p>
+                  ${badgeType}
+                </div>
+                <p class="text-[11px] text-slate-400 truncate">${student.rollNo} • ${student.className}</p>
+                ${isPresent ? `<p class="text-[10px] text-emerald-400 mt-0.5"><i class="fa-regular fa-clock mr-1"></i>${record.time} (${record.method})</p>` : ''}
+              </div>
+            </div>
+
+            <button type="button" class="px-3 py-1.5 rounded-lg text-xs font-bold shrink-0 transition-all ${
+              isPresent
+                ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/25'
+                : 'bg-slate-800 text-slate-400 border border-white/10 hover:text-white'
+            }">
+              ${isPresent ? '<i class="fa-solid fa-check mr-1"></i>Present' : 'Absent'}
+            </button>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // =========================================================================
+    // 6. TAB 2: ENROLL STUDENT (WEBCAM OR PHOTO UPLOAD)
+    // =========================================================================
+    function setEnrollCaptureMode(mode) {
+      const btnWebcam = document.getElementById('modeBtnWebcam');
+      const btnUpload = document.getElementById('modeBtnUpload');
+      const boxWebcam = document.getElementById('enrollWebcamBox');
+      const boxUpload = document.getElementById('enrollUploadBox');
+
+      currentExtractedDescriptor = null;
+      currentCapturedDataUrl = null;
+      updateDescriptorStatus('Awaiting Face Capture', 'amber');
+
+      if (mode === 'webcam') {
+        btnWebcam.className = 'py-2 px-3 rounded-lg text-xs font-semibold bg-indigo-600 text-white transition-all';
+        btnUpload.className = 'py-2 px-3 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition-all';
+        boxWebcam.classList.remove('hidden');
+        boxUpload.classList.add('hidden');
+      } else {
+        stopEnrollCamera();
+        btnUpload.className = 'py-2 px-3 rounded-lg text-xs font-semibold bg-indigo-600 text-white transition-all';
+        btnWebcam.className = 'py-2 px-3 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition-all';
+        boxUpload.classList.remove('hidden');
+        boxWebcam.classList.add('hidden');
+      }
+    }
+
+    async function startEnrollCamera() {
+      const video = document.getElementById('enrollVideo');
+      const prompt = document.getElementById('enrollCamPrompt');
+      const preview = document.getElementById('enrollCapturedPreview');
+
+      try {
+        enrollStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+          audio: false
+        });
+        video.srcObject = enrollStream;
+        await video.play();
+
+        prompt.classList.add('hidden');
+        preview.classList.add('hidden');
+        video.classList.remove('hidden');
+        document.getElementById('btnSnapEnroll').classList.remove('hidden');
+        document.getElementById('btnRetakeEnroll').classList.add('hidden');
+      } catch (err) {
+        showToast('Webcam unavailable or blocked. Switch to "Upload Photo" mode to enroll!', 'warning');
+      }
+    }
+
+    function stopEnrollCamera() {
+      if (enrollStream) {
+        enrollStream.getTracks().forEach(t => t.stop());
+        enrollStream = null;
+      }
+    }
+
+    async function captureEnrollSnapshot() {
+      const video = document.getElementById('enrollVideo');
+      const preview = document.getElementById('enrollCapturedPreview');
+      const canvas = document.getElementById('hiddenProcessCanvas');
+
+      canvas.width = video.videoWidth || 480;
+      canvas.height = video.videoHeight || 360;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      currentCapturedDataUrl = dataUrl;
+
+      preview.src = dataUrl;
+      video.classList.add('hidden');
+      preview.classList.remove('hidden');
+      document.getElementById('btnSnapEnroll').classList.add('hidden');
+      document.getElementById('btnRetakeEnroll').classList.remove('hidden');
+
+      stopEnrollCamera();
+      await extractFaceDescriptorFromImageElement(preview);
+    }
+
+    function retakeEnrollSnapshot() {
+      currentExtractedDescriptor = null;
+      currentCapturedDataUrl = null;
+      updateDescriptorStatus('Awaiting Face Capture', 'amber');
+      startEnrollCamera();
+    }
+
+    function handleEnrollFileUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const preview = document.getElementById('enrollUploadPreview');
+        const placeholder = document.getElementById('uploadPlaceholder');
+
+        currentCapturedDataUrl = e.target.result;
+        preview.src = e.target.result;
+        preview.classList.remove('hidden');
+        placeholder.classList.add('hidden');
+
+        preview.onload = async () => {
+          await extractFaceDescriptorFromImageElement(preview);
+        };
+      };
+      reader.readAsDataURL(file);
+    }
+
+    async function extractFaceDescriptorFromImageElement(imgEl) {
+      if (!modelsLoaded) {
+        updateDescriptorStatus('AI Offline — Saved as Photo/Manual Profile', 'amber');
+        return;
+      }
+
+      updateDescriptorStatus('Analyzing Facial Landmarks...', 'indigo');
+
+      try {
+        const detection = await faceapi
+          .detectSingleFace(imgEl, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.45 }))
+          .withFaceLandmarks()
+          .withFaceDescriptor();
+
+        if (!detection) {
+          currentExtractedDescriptor = null;
+          updateDescriptorStatus('No clear face detected! Please use a well-lit front photo.', 'rose');
+          showToast('Could not detect a clear face. Try a brighter, front-facing photo.', 'error');
+          return;
+        }
+
+        currentExtractedDescriptor = Array.from(detection.descriptor);
+        updateDescriptorStatus('128-Float Face Embedding Extracted ✓', 'emerald');
+        showToast('Face landmarks extracted successfully!', 'success');
+      } catch (err) {
+        console.error(err);
+        updateDescriptorStatus('Extraction Error — Try another photo', 'rose');
+      }
+    }
+
+    function updateDescriptorStatus(text, color) {
+      const label = document.getElementById('descriptorStatusLabel');
+      const colorMap = {
+        amber: 'font-semibold text-amber-400',
+        indigo: 'font-semibold text-indigo-400 animate-pulse',
+        emerald: 'font-semibold text-emerald-400',
+        rose: 'font-semibold text-rose-400'
+      };
+      label.className = colorMap[color] || colorMap.amber;
+      label.textContent = text;
+    }
+
+    function handleEnrollSubmit(e) {
+      e.preventDefault();
+      const name = document.getElementById('enrollName').value.trim();
+      const rollNo = document.getElementById('enrollRoll').value.trim().toUpperCase();
+      const className = document.getElementById('enrollClass').value;
+
+      if (!name || !rollNo) return;
+
+      // Check duplicate roll number
+      const existingIdx = students.findIndex(s => s.rollNo.toUpperCase() === rollNo);
+      const initials = name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+      const photoToSave = currentCapturedDataUrl || createAvatarSVG(initials, '#6366f1');
+
+      const studentRecord = {
+        id: 'stu-' + Date.now(),
+        name,
+        rollNo,
+        className,
+        photo: photoToSave,
+        descriptor: currentExtractedDescriptor, // 128-element float array or null
+        isDemo: !currentExtractedDescriptor
+      };
+
+      if (existingIdx >= 0) {
+        students[existingIdx] = studentRecord;
+        showToast(`Updated profile for ${name} (${rollNo})`, 'success');
+      } else {
+        students.unshift(studentRecord);
+        showToast(`Enrolled ${name} (${rollNo}) to Sri Lakshmi Balaji School!`, 'success');
+      }
+
+      saveStudents();
+      renderEnrolledDirectory();
+      renderAttendanceChecklist();
+
+      // Reset form
+      document.getElementById('enrollForm').reset();
+      currentExtractedDescriptor = null;
+      currentCapturedDataUrl = null;
+      document.getElementById('enrollCapturedPreview').classList.add('hidden');
+      document.getElementById('enrollCamPrompt').classList.remove('hidden');
+      document.getElementById('btnRetakeEnroll').classList.add('hidden');
+      document.getElementById('enrollUploadPreview').classList.add('hidden');
+      document.getElementById('uploadPlaceholder').classList.remove('hidden');
+      updateDescriptorStatus('Awaiting Face Capture', 'amber');
+    }
+
+    function deleteStudent(rollNo) {
+      students = students.filter(s => s.rollNo !== rollNo);
+      saveStudents();
+      renderEnrolledDirectory();
+      renderAttendanceChecklist();
+      showToast(`Removed student ${rollNo}`, 'info');
+    }
+
+    function renderEnrolledDirectory() {
+      const container = document.getElementById('enrolledStudentsList');
+      document.getElementById('directoryTotalBadge').textContent = `${students.length} Total`;
+      document.getElementById('headerStudentCount').textContent = `${students.length} Students Enrolled`;
+
+      if (students.length === 0) {
+        container.innerHTML = `<p class="text-center text-xs text-slate-500 py-8">No students enrolled yet.</p>`;
+        return;
+      }
+
+      container.innerHTML = students.map(s => `
+        <div class="glass-card rounded-xl p-3 flex items-center justify-between gap-3">
+          <div class="flex items-center gap-3 min-w-0">
+            <img src="${s.photo}" alt="${s.name}" class="w-11 h-11 rounded-xl object-cover border border-white/10 shrink-0" />
+            <div class="min-w-0">
+              <p class="text-sm font-semibold text-white truncate">${s.name}</p>
+              <p class="text-[11px] text-slate-400">${s.rollNo} • ${s.className}</p>
+              <div class="mt-1">
+                ${s.descriptor
+                  ? '<span class="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"><i class="fa-solid fa-fingerprint"></i> Face AI Active</span>'
+                  : '<span class="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-300 border border-amber-500/30"><i class="fa-solid fa-user-pen"></i> Demo / Manual</span>'
+                }
+              </div>
+            </div>
+          </div>
+          <button onclick="deleteStudent('${s.rollNo}')" title="Remove Student" class="w-8 h-8 rounded-lg bg-rose-500/10 hover:bg-rose-500/25 text-rose-400 flex items-center justify-center transition-all shrink-0">
+            <i class="fa-solid fa-trash-can text-xs"></i>
+          </button>
+        </div>
+      `).join('');
+    }
+
+    // =========================================================================
+    // 7. TAB 3: REPORTS, CSV EXPORT & GOOGLE SHEETS SYNC
+    // =========================================================================
+    function getFilteredReportRows() {
+      const dateStr = document.getElementById('reportDateFilter').value;
+      const classFilter = document.getElementById('reportClassFilter').value;
+      const dayLogs = attendanceLogs[dateStr] || {};
+
+      return students
+        .filter(s => classFilter === 'ALL' || s.className === classFilter)
+        .map(s => {
+          const log = dayLogs[s.rollNo];
+          return {
+            date: dateStr,
+            rollNo: s.rollNo,
+            name: s.name,
+            className: s.className,
+            status: log ? log.status : 'Absent',
+            time: log && log.status === 'Present' ? log.time : '-',
+            method: log && log.status === 'Present' ? log.method : '-'
+          };
+        });
+    }
+
+    function renderReportsTable() {
+      const tbody = document.getElementById('reportsTableBody');
+      const rows = getFilteredReportRows();
+
+      if (rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-xs text-slate-500">No records available for selected class/date.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = rows.map(r => `
+        <tr class="hover:bg-white/[0.02] transition-colors">
+          <td class="py-3 px-4 font-mono text-xs text-indigo-300">${r.rollNo}</td>
+          <td class="py-3 px-4 font-medium text-white">${r.name}</td>
+          <td class="py-3 px-4 text-xs text-slate-300">${r.className}</td>
+          <td class="py-3 px-4">
+            <span class="px-2.5 py-1 rounded-full text-xs font-semibold ${
+              r.status === 'Present'
+                ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                : 'bg-rose-500/15 text-rose-300 border border-rose-500/30'
+            }">
+              ${r.status}
+            </span>
+          </td>
+          <td class="py-3 px-4 text-xs text-slate-300">${r.time}</td>
+          <td class="py-3 px-4 text-xs text-slate-400">${r.method}</td>
+        </tr>
+      `).join('');
+    }
+
+    function exportAttendanceCSV() {
+      const rows = getFilteredReportRows();
+      if (rows.length === 0) {
+        showToast('No attendance records to export.', 'warning');
+        return;
+      }
+
+      const headers = ['Date', 'Roll Number', 'Student Name', 'Class & Section', 'Status', 'Time Logged', 'Verification Method'];
+      const csvLines = [
+        headers.join(','),
+        ...rows.map(r => [
+          `"${r.date}"`,
+          `"${r.rollNo}"`,
+          `"${r.name}"`,
+          `"${r.className}"`,
+          `"${r.status}"`,
+          `"${r.time}"`,
+          `"${r.method}"`
+        ].join(','))
+      ];
+
+      const blob = new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `SLBS_Attendance_${rows[0].date}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      showToast('Attendance report downloaded as CSV!', 'success');
+    }
+
+    function saveWebhookUrl() {
+      const val = document.getElementById('webhookUrlInput').value.trim();
+      localStorage.setItem(STORAGE_KEY_WEBHOOK, val);
+    }
+
+    async function syncToGoogleSheets() {
+      const webhookUrl = document.getElementById('webhookUrlInput').value.trim();
+      if (!webhookUrl) {
+        showToast('Please paste your Google Apps Script Web App URL first.', 'warning');
+        return;
+      }
+
+      const rows = getFilteredReportRows();
+      if (rows.length === 0) {
+        showToast('No records found to sync.', 'warning');
+        return;
+      }
+
+      const btn = document.getElementById('btnSyncSheets');
+      const originalHtml = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i><span>Syncing...</span>';
+
+      try {
+        // Using no-cors mode so Google Apps Script Web Apps accept cross-origin POST smoothly
+        await fetch(webhookUrl, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            school: 'Sri Lakshmi Balaji School',
+            records: rows
+          })
+        });
+
+        showToast(`Synced ${rows.length} student records to Google Sheets!`, 'success');
+      } catch (err) {
+        console.error('Sync failed:', err);
+        showToast('Network error syncing to Google Sheets. Check URL & permissions.', 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+      }
+    }
+
+    function toggleAppsScriptModal(show) {
+      const modal = document.getElementById('appsScriptModal');
+      if (show) modal.classList.remove('hidden');
+      else modal.classList.add('hidden');
+    }
+
+    function copyAppsScriptCode() {
+      const code = document.getElementById('appsScriptCodeBlock').innerText;
+      const textarea = document.createElement('textarea');
+      textarea.value = code;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+      showToast('Apps Script code copied to clipboard!', 'success');
+    }
+
+    // =========================================================================
+    // 8. UI HELPERS & TOAST NOTIFICATIONS
+    // =========================================================================
+    function updateAllUI() {
+      renderAttendanceChecklist();
+      renderEnrolledDirectory();
+      renderReportsTable();
+    }
+
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toastContainer');
+      const styles = {
+        success: 'border-emerald-500/40 bg-slate-900/95 text-emerald-300',
+        warning: 'border-amber-500/40 bg-slate-900/95 text-amber-300',
+        error: 'border-rose-500/40 bg-slate-900/95 text-rose-300',
+        info: 'border-indigo-500/40 bg-slate-900/95 text-indigo-300'
+      };
+      const icons = {
+        success: 'fa-circle-check text-emerald-400',
+        warning: 'fa-triangle-exclamation text-amber-400',
+        error: 'fa-circle-xmark text-rose-400',
+        info: 'fa-circle-info text-indigo-400'
+      };
+
+      const toast = document.createElement('div');
+      toast.className = `pointer-events-auto glass-panel rounded-xl px-4 py-3 border shadow-xl flex items-center gap-3 text-xs font-medium transition-all duration-300 ${styles[type] || styles.info}`;
+      toast.innerHTML = `
+        <i class="fa-solid ${icons[type] || icons.info} text-base shrink-0"></i>
+        <span class="flex-1">${message}</span>
+      `;
+
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(-8px)';
+        setTimeout(() => toast.remove(), 300);
+      }, 3600);
+    }
+  </script>
+</body>
+</html>
